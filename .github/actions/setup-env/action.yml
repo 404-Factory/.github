@@ -1,0 +1,86 @@
+# .github/actions/setup-env/action.yml
+# 공통 환경 설정 Composite Action
+# 각 서비스 repo의 워크플로우에서 언어별 런타임 셋업을 한 줄로 처리한다.
+#
+# 사용 예시:
+#   - uses: org/.github/.github/actions/setup-env@main
+#     with:
+#       language: node
+#       node-version: '20.x'
+
+name: Setup Environment
+description: "Set up language runtime and cache for CI jobs."
+
+inputs:
+  language:
+    required: true
+    description: "Runtime language: node | python | go | java"
+  node-version:
+    required: false
+    default: "20.x"
+  python-version:
+    required: false
+    default: "3.11"
+  go-version:
+    required: false
+    default: "1.22"
+  java-version:
+    required: false
+    default: "21"
+  java-distribution:
+    required: false
+    default: "temurin"
+  working-directory:
+    required: false
+    default: "."
+    description: "Path to package manifest (for cache key resolution)."
+
+outputs:
+  runtime-version:
+    description: "Resolved version of the language runtime."
+    value: ${{ steps.resolve.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      if: inputs.language == 'node'
+      uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: npm
+        cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+    - name: Set up Python
+      if: inputs.language == 'python'
+      uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.1.0
+      with:
+        python-version: ${{ inputs.python-version }}
+        cache: pip
+
+    - name: Set up Go
+      if: inputs.language == 'go'
+      uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5.0.1
+      with:
+        go-version: ${{ inputs.go-version }}
+        cache: true
+
+    - name: Set up Java
+      if: inputs.language == 'java'
+      uses: actions/setup-java@99b8673ff64fbf99d8d7b505bd5d5cf574f8bd31 # v4.2.1
+      with:
+        java-version: ${{ inputs.java-version }}
+        distribution: ${{ inputs.java-distribution }}
+        cache: maven
+
+    - name: Resolve runtime version
+      id: resolve
+      shell: bash
+      run: |
+        case "${{ inputs.language }}" in
+          node)   echo "version=$(node --version 2>/dev/null || echo unknown)" >> "$GITHUB_OUTPUT" ;;
+          python) echo "version=$(python --version 2>/dev/null || echo unknown)" >> "$GITHUB_OUTPUT" ;;
+          go)     echo "version=$(go version 2>/dev/null || echo unknown)"      >> "$GITHUB_OUTPUT" ;;
+          java)   echo "version=$(java -version 2>&1 | head -1 || echo unknown)" >> "$GITHUB_OUTPUT" ;;
+          *)      echo "version=unknown" >> "$GITHUB_OUTPUT" ;;
+        esac

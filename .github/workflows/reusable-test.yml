@@ -1,0 +1,267 @@
+# .github/workflows/reusable-test.yml
+# 다국어 지원 테스트 Reusable Workflow (Node.js / Python / Go / Java)
+#
+# 호출 예시:
+#   jobs:
+#     test:
+#       uses: org/.github/.github/workflows/reusable-test.yml@main
+#       with:
+#         service-name: my-service
+#         language: node
+#       secrets:
+#         sonar-token: ${{ secrets.SONAR_TOKEN }}
+
+name: Reusable Test Workflow
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        required: false
+        type: string
+        default: ""
+        description: "Service name (used in reports/comments). 생략 시 repo 이름 자동 사용."
+      language:
+        required: true
+        type: string
+        description: "Runtime language: node | python | go | java"
+      # Node.js
+      node-version:
+        required: false
+        type: string
+        default: "20.x"
+      # Python
+      python-version:
+        required: false
+        type: string
+        default: "3.11"
+      # Go
+      go-version:
+        required: false
+        type: string
+        default: "1.22"
+      # Java
+      java-version:
+        required: false
+        type: string
+        default: "21"
+      java-distribution:
+        required: false
+        type: string
+        default: "temurin"
+      # 공통
+      test-command:
+        required: false
+        type: string
+        default: ""
+        description: "Override default test command for the language."
+      coverage-threshold:
+        required: false
+        type: string
+        default: "80"
+        description: "Minimum line coverage % required to pass."
+      working-directory:
+        required: false
+        type: string
+        default: "."
+        description: "Directory containing the service source."
+    secrets:
+      sonar-token:
+        required: false
+    outputs:
+      coverage:
+        description: "Line coverage percentage."
+        value: ${{ jobs.test.outputs.coverage }}
+
+permissions: {}
+
+jobs:
+  test:
+    name: test-${{ inputs.service-name || github.event.repository.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      SERVICE_NAME: ${{ inputs.service-name || github.event.repository.name }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    outputs:
+      coverage: ${{ steps.coverage.outputs.pct }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # ── Node.js ────────────────────────────────────────────────────────────
+      - name: Set up Node.js
+        if: inputs.language == 'node'
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - name: Install dependencies (Node.js)
+        if: inputs.language == 'node'
+        run: npm ci
+
+      - name: Lint (Node.js)
+        if: inputs.language == 'node'
+        run: npm run lint --if-present
+
+      - name: Test (Node.js)
+        if: inputs.language == 'node'
+        run: |
+          CMD="${{ inputs.test-command }}"
+          ${CMD:-npm test -- --coverage}
+
+      # ── Python ─────────────────────────────────────────────────────────────
+      - name: Set up Python
+        if: inputs.language == 'python'
+        uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.1.0
+        with:
+          python-version: ${{ inputs.python-version }}
+          cache: pip
+
+      - name: Install dependencies (Python)
+        if: inputs.language == 'python'
+        run: |
+          pip install --upgrade pip
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt
+          elif [ -f requirements.txt ]; then pip install -r requirements.txt
+          fi
+
+      - name: Lint (Python)
+        if: inputs.language == 'python'
+        run: |
+          pip install ruff --quiet
+          ruff check . --output-format=github
+
+      - name: Test (Python)
+        if: inputs.language == 'python'
+        run: |
+          CMD="${{ inputs.test-command }}"
+          ${CMD:-python -m pytest --cov=. --cov-report=json:coverage/coverage.json --cov-report=lcov:coverage/lcov.info -q}
+
+      # ── Go ─────────────────────────────────────────────────────────────────
+      - name: Set up Go
+        if: inputs.language == 'go'
+        uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5.0.1
+        with:
+          go-version: ${{ inputs.go-version }}
+          cache: true
+
+      - name: Lint (Go)
+        if: inputs.language == 'go'
+        uses: golangci/golangci-lint-action@3cfe3a4abbb849e10058ce4af15d205b6da42804 # v4.0.0
+        with:
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Test (Go)
+        if: inputs.language == 'go'
+        run: |
+          CMD="${{ inputs.test-command }}"
+          ${CMD:-go test ./... -coverprofile=coverage/coverage.out -covermode=atomic}
+
+      - name: Convert Go coverage to lcov
+        if: inputs.language == 'go'
+        run: |
+          go install github.com/jandelgado/gcov2lcov@latest
+          mkdir -p coverage
+          gcov2lcov -infile coverage/coverage.out -outfile coverage/lcov.info
+
+      # ── Java ───────────────────────────────────────────────────────────────
+      - name: Set up Java
+        if: inputs.language == 'java'
+        uses: actions/setup-java@99b8673ff64fbf99d8d7b505bd5d5cf574f8bd31 # v4.2.1
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: ${{ inputs.java-distribution }}
+          cache: maven
+
+      - name: Test (Java / Maven)
+        if: inputs.language == 'java' && inputs.test-command == ''
+        run: mvn -B verify --no-transfer-progress
+
+      - name: Test (Java / custom)
+        if: inputs.language == 'java' && inputs.test-command != ''
+        run: ${{ inputs.test-command }}
+
+      # ── Coverage 집계 ───────────────────────────────────────────────────────
+      - name: Parse coverage
+        id: coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          PCT=0
+          case "${{ inputs.language }}" in
+            node)
+              PCT=$(node -e "const s=require('./coverage/coverage-summary.json');console.log(s.total.lines.pct)" 2>/dev/null || echo 0) ;;
+            python)
+              PCT=$(python -c "import json,sys; d=json.load(open('coverage/coverage.json')); print(round(d['totals']['percent_covered'],2))" 2>/dev/null || echo 0) ;;
+            go)
+              PCT=$(go tool cover -func coverage/coverage.out 2>/dev/null | awk '/^total/{gsub(/%/,""); print $3}' || echo 0) ;;
+            java)
+              REPORT="target/site/jacoco/jacoco.csv"
+              if [ -f "$REPORT" ]; then
+                PCT=$(awk -F',' 'NR>1{m+=$4; c+=$5} END{if(m+c>0) printf "%.2f", c/(m+c)*100; else print 0}' "$REPORT")
+              fi ;;
+          esac
+          echo "pct=${PCT}" >> "$GITHUB_OUTPUT"
+          echo "Coverage: ${PCT}%"
+
+      - name: Enforce coverage threshold
+        shell: bash
+        run: |
+          PCT="${{ steps.coverage.outputs.pct }}"
+          THRESHOLD="${{ inputs.coverage-threshold }}"
+          if (( $(echo "$PCT < $THRESHOLD" | bc -l) )); then
+            echo "::error::Coverage ${PCT}% is below threshold ${THRESHOLD}%"
+            exit 1
+          fi
+          echo "Coverage check passed: ${PCT}% >= ${THRESHOLD}%"
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
+        with:
+          name: coverage-${{ inputs.service-name }}
+          path: ${{ inputs.working-directory }}/coverage/
+          if-no-files-found: warn
+
+      # ── SonarCloud ──────────────────────────────────────────────────────────
+      - name: SonarCloud scan
+        if: ${{ secrets.sonar-token != '' }}
+        uses: SonarSource/sonarcloud-github-action@49e6cd3b187936a73b8280d59ffd9da69df63ec9 # v2.1.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.sonar-token }}
+
+      # ── PR 코멘트 ────────────────────────────────────────────────────────────
+      - name: Comment PR with test results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const coverage = '${{ steps.coverage.outputs.pct }}';
+            const threshold = '${{ inputs.coverage-threshold }}';
+            const passed = parseFloat(coverage) >= parseFloat(threshold);
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: [
+                `## Test Results — ${{ inputs.service-name }}`,
+                `| | |`,
+                `|---|---|`,
+                `| Language | \`${{ inputs.language }}\` |`,
+                `| Coverage | \`${coverage}%\` |`,
+                `| Threshold | \`${threshold}%\` |`,
+                `| Status | ${passed ? '✅ Passed' : '❌ Failed'} |`,
+              ].join('\n')
+            });
