@@ -23,9 +23,9 @@ on:
 
 jobs:
   test:
-    uses: your-org/.github/.github/workflows/reusable-test.yml@main
+    uses: 404-Factory/.github/.github/workflows/reusable-test.yml@main
     with:
-      service-name: user-api
+      # service-name 생략 시 repo 이름 자동 사용
       language: node        # ← 변경 시 아래 버전 input도 함께 교체
       node-version: "20.x"  # node   → node-version
       # python-version: "3.11"  # python → python-version
@@ -37,10 +37,11 @@ jobs:
 
   build:
     needs: test
-    uses: your-org/.github/.github/workflows/reusable-build.yml@main
+    uses: 404-Factory/.github/.github/workflows/reusable-build.yml@main
     with:
-      service-name: user-api
-      docker-registry: ghcr.io/your-org
+      # service-name 생략 시 repo 이름 자동 사용
+      docker-registry: ${{ secrets.ECR_REGISTRY }}  # <account-id>.dkr.ecr.ap-northeast-2.amazonaws.com
+      aws-region: ap-northeast-2
       # 아래는 기본값과 다를 때만 명시
       # build-context: .
       # dockerfile: Dockerfile
@@ -48,5 +49,5 @@ jobs:
       # severity: HIGH,CRITICAL
       # sign-image: true
     secrets:
-      registry-username: ${{ github.actor }}
-      registry-password: ${{ secrets.GITHUB_TOKEN }}
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

@@ -17,9 +17,10 @@ on:
   workflow_call:
     inputs:
       service-name:
-        required: true
+        required: false
         type: string
-        description: "Service name (used in reports/comments)."
+        default: ""
+        description: "Service name (used in reports/comments). 생략 시 repo 이름 자동 사용."
       language:
         required: true
         type: string
@@ -76,12 +77,14 @@ permissions: {}
 
 jobs:
   test:
-    name: test-${{ inputs.service-name }}
+    name: test-${{ inputs.service-name || github.event.repository.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
       pull-requests: write
+    env:
+      SERVICE_NAME: ${{ inputs.service-name || github.event.repository.name }}
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
