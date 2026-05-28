@@ -17,9 +17,9 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, dev]
   pull_request:
-    branches: [main, develop]
+    branches: [main, dev]
 
 jobs:
   test:
@@ -40,7 +40,7 @@ jobs:
     uses: 404-Factory/.github/.github/workflows/reusable-build.yml@main
     with:
       # service-name 생략 시 repo 이름 자동 사용
-      docker-registry: ${{ secrets.ECR_REGISTRY }}  # <account-id>.dkr.ecr.ap-northeast-2.amazonaws.com
+      docker-registry: ${{ vars.ECR_REGISTRY }}  # <account-id>.dkr.ecr.ap-northeast-2.amazonaws.com
       aws-region: ap-northeast-2
       # 아래는 기본값과 다를 때만 명시
       # build-context: .
