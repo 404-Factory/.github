@@ -231,7 +231,7 @@ jobs:
       - name: Install trivy
         uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
         with:
-          version: v0.69.2
+          version: v0.70.0
 
       - name: Run Trivy scan (gate)
         env:
@@ -245,6 +245,7 @@ jobs:
             --ignore-unfixed \
             --vuln-type os,library \
             --exit-code 1 \
+            --skip-version-check \
             "$IMAGE_REF"
 
       - name: Upload SARIF to GitHub Security
