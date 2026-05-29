@@ -95,6 +95,9 @@ on:
       registry-password:
         required: false
         description: "Registry password / token. GHCR 등 ECR 외 레지스트리 사용 시."
+      gpr-token:
+        required: false
+        description: "GitHub Packages 읽기용 PAT (read:packages 스코프). pre-build-command에서 다른 레포 패키지 접근 시 필요."
     outputs:
       image:
         description: "Image reference (registry/name)."
@@ -145,6 +148,8 @@ jobs:
 
       - name: Pre-build
         if: ${{ inputs.pre-build-command != '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.gpr-token || github.token }}
         run: |
           find . -name "gradlew" -exec chmod +x {} \; 2>/dev/null || true
           ${{ inputs.pre-build-command }}
