@@ -135,7 +135,7 @@ jobs:
 
       - name: Set up Java
         if: ${{ inputs.java-version != '' }}
-        uses: actions/setup-java@99b8673ff64fbf99d8d7b505bd4a4c9d46f0b4e9 # v4.2.1
+        uses: actions/setup-java@99b8673ff64fbf99d8d325f52d9a5bdedb8483e9 # v4.2.1
         with:
           java-version: ${{ inputs.java-version }}
           distribution: temurin
