@@ -72,6 +72,16 @@ on:
         type: string
         default: ""
         description: "ECR registry URL (<account-id>.dkr.ecr.<region>.amazonaws.com). docker-registry보다 우선 적용. 비밀값 아님."
+      java-version:
+        required: false
+        type: string
+        default: ""
+        description: "pre-build-command 실행 전 설정할 Java 버전 (예: '17'). 비워두면 Java 설정 스킵."
+      pre-build-command:
+        required: false
+        type: string
+        default: ""
+        description: "Docker build 전 실행할 명령어 (예: ./gradlew build -x test --no-daemon)."
     secrets:
       aws-access-key-id:
         required: false
@@ -122,6 +132,20 @@ jobs:
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
           persist-credentials: false
+
+      - name: Set up Java
+        if: ${{ inputs.java-version != '' }}
+        uses: actions/setup-java@99b8673ff64fbf99d8d7b505bd4a4c9d46f0b4e9 # v4.2.1
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: temurin
+
+      - name: Pre-build
+        if: ${{ inputs.pre-build-command != '' }}
+        run: ${{ inputs.pre-build-command }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_ACTOR: ${{ github.actor }}
 
       - name: Set up QEMU (multi-arch)
         if: contains(inputs.platforms, ',')
