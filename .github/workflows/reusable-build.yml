@@ -197,19 +197,24 @@ jobs:
           path: sbom.cdx.json
           if-no-files-found: error
 
-      - name: Save image for Trivy scan
-        run: docker save ${{ steps.meta.outputs.ref }} -o ${{ github.workspace }}/image.tar
+      - name: Install trivy
+        uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+        with:
+          version: v0.69.2
 
       - name: Run Trivy scan (gate)
-        uses: aquasecurity/trivy-action@2b6a709cf9c4025c5438138008beaddbb02086f0 # v0.14.0
-        with:
-          input: /github/workspace/image.tar
-          format: sarif
-          output: trivy-results.sarif
-          severity: ${{ inputs.severity }}
-          ignore-unfixed: true
-          vuln-type: os,library
-          exit-code: '1'
+        env:
+          IMAGE_REF: ${{ steps.meta.outputs.ref }}
+          SEVERITY: ${{ inputs.severity }}
+        run: |
+          trivy image \
+            --format sarif \
+            --output trivy-results.sarif \
+            --severity "$SEVERITY" \
+            --ignore-unfixed \
+            --vuln-type os,library \
+            --exit-code 1 \
+            "$IMAGE_REF"
 
       - name: Upload SARIF to GitHub Security
         if: always()
