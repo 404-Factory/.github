@@ -142,10 +142,12 @@ jobs:
 
       - name: Pre-build
         if: ${{ inputs.pre-build-command != '' }}
-        run: ${{ inputs.pre-build-command }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_ACTOR: ${{ github.actor }}
+        run: |
+          find . -name "gradlew" -exec chmod +x {} \; 2>/dev/null || true
+          ${{ inputs.pre-build-command }}
 
       - name: Set up QEMU (multi-arch)
         if: contains(inputs.platforms, ',')
