@@ -206,6 +206,7 @@ jobs:
 
       - name: Upload SARIF to GitHub Security
         if: always()
+        continue-on-error: true   # private repo / Advanced Security 미활성화 환경에서 업로드 실패 허용
         uses: github/codeql-action/upload-sarif@012739e5082ff0c22ca6d6ab32e07c36df03c4a4 # v3.22.12
         with:
           sarif_file: trivy-results.sarif
