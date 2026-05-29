@@ -113,6 +113,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  env:
+    GITHUB_TOKEN: ${{ github.token }}
+    GITHUB_ACTOR: ${{ github.actor }}
   build:
     name: build-${{ inputs.service-name || github.event.repository.name }}
     runs-on: ubuntu-latest
@@ -142,9 +145,6 @@ jobs:
 
       - name: Pre-build
         if: ${{ inputs.pre-build-command != '' }}
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GITHUB_ACTOR: ${{ github.actor }}
         run: |
           find . -name "gradlew" -exec chmod +x {} \; 2>/dev/null || true
           ${{ inputs.pre-build-command }}
