@@ -63,6 +63,9 @@ on:
         default: "ap-northeast-2"
         description: "AWS region for ECR (e.g. ap-northeast-2)."
     secrets:
+      ecr-registry:
+        required: false
+        description: "ECR registry URL (<account-id>.dkr.ecr.<region>.amazonaws.com). inputs.docker-registry보다 우선 적용."
       aws-access-key-id:
         required: false
         description: "AWS Access Key ID for ECR login."
@@ -127,7 +130,7 @@ jobs:
           set -euo pipefail
           SERVICE="${{ inputs.service-name }}"
           SERVICE="${SERVICE:-${GITHUB_REPOSITORY##*/}}" 
-          IMAGE="${{ inputs.docker-registry }}/${SERVICE}"
+          IMAGE="${{ secrets.ecr-registry || inputs.docker-registry }}/${SERVICE}"
           TAG="sha-${GITHUB_SHA::12}"
           echo "service=${SERVICE}"    >> "$GITHUB_OUTPUT"
           echo "image=${IMAGE}"        >> "$GITHUB_OUTPUT"
