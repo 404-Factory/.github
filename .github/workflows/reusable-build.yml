@@ -113,10 +113,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  env:
-    GITHUB_TOKEN: ${{ github.token }}
-    GITHUB_ACTOR: ${{ github.actor }}
   build:
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      GITHUB_ACTOR: ${{ github.actor }}
     name: build-${{ inputs.service-name || github.event.repository.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
