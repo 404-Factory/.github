@@ -4,7 +4,7 @@
 # 호출 예시:
 #   jobs:
 #     build:
-#       uses: org/.github/.github/workflows/reusable-build.yml@main
+#       uses: org/.github/.github/workflows/reusable-build.yml@<SHA 또는 릴리스 태그>
 #       with:
 #         service-name: my-service
 #         docker-registry: ghcr.io/my-org
@@ -67,10 +67,12 @@ on:
         type: boolean
         default: false
         description: "ECR 사용 여부. true 시 AWS credentials로 ECR 로그인, false 시 registry-username/password 사용."
-    secrets:
       ecr-registry:
         required: false
-        description: "ECR registry URL (<account-id>.dkr.ecr.<region>.amazonaws.com). inputs.docker-registry보다 우선 적용."
+        type: string
+        default: ""
+        description: "ECR registry URL (<account-id>.dkr.ecr.<region>.amazonaws.com). docker-registry보다 우선 적용. 비밀값 아님."
+    secrets:
       aws-access-key-id:
         required: false
         description: "AWS Access Key ID for ECR login."
@@ -97,12 +99,12 @@ on:
 permissions: {}
 
 concurrency:
-  group: build-${{ github.workflow }}-${{ github.ref }}-${{ inputs.service-name }}
+  group: build-${{ github.workflow }}-${{ github.ref }}-${{ inputs.service-name || github.event.repository.name }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: build-${{ inputs.service-name }}
+    name: build-${{ inputs.service-name || github.event.repository.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -128,14 +130,16 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
 
-      - name: Compute image reference 
+      - name: Compute image reference
         id: meta
         shell: bash
+        env:
+          INPUT_SERVICE: ${{ inputs.service-name }}
+          INPUT_REGISTRY: ${{ inputs.ecr-registry || inputs.docker-registry }}
         run: |
           set -euo pipefail
-          SERVICE="${{ inputs.service-name }}"
-          SERVICE="${SERVICE:-${GITHUB_REPOSITORY##*/}}" 
-          IMAGE="${{ secrets.ecr-registry || inputs.docker-registry }}/${SERVICE}"
+          SERVICE="${INPUT_SERVICE:-${GITHUB_REPOSITORY##*/}}"
+          IMAGE="${INPUT_REGISTRY}/${SERVICE}"
           TAG="sha-${GITHUB_SHA::12}"
           echo "service=${SERVICE}"    >> "$GITHUB_OUTPUT"
           echo "image=${IMAGE}"        >> "$GITHUB_OUTPUT"
@@ -175,30 +179,31 @@ jobs:
           load: true
           push: false
           tags: ${{ steps.meta.outputs.ref }}
-          cache-from: type=gha,scope=${{ inputs.service-name }}
-          cache-to:   type=gha,mode=max,scope=${{ inputs.service-name }}
+          cache-from: type=gha,scope=${{ steps.meta.outputs.service }}
+          cache-to:   type=gha,mode=max,scope=${{ steps.meta.outputs.service }}
           provenance: false
 
       - name: Install syft
+        id: syft-installer
         uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
 
       - name: Generate SBOM (CycloneDX)
-        run: syft docker:${{ steps.meta.outputs.ref }} -o cyclonedx-json=sbom.cdx.json
+        run: ${{ steps.syft-installer.outputs.cmd }} docker:${{ steps.meta.outputs.ref }} -o cyclonedx-json=sbom.cdx.json
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
         with:
-          name: sbom-${{ inputs.service-name }}-${{ steps.meta.outputs.tag }}
+          name: sbom-${{ steps.meta.outputs.service }}-${{ steps.meta.outputs.tag }}
           path: sbom.cdx.json
           if-no-files-found: error
 
       - name: Save image for Trivy scan
-        run: docker save ${{ steps.meta.outputs.ref }} -o /tmp/image.tar
+        run: docker save ${{ steps.meta.outputs.ref }} -o ${{ github.workspace }}/image.tar
 
       - name: Run Trivy scan (gate)
         uses: aquasecurity/trivy-action@2b6a709cf9c4025c5438138008beaddbb02086f0 # v0.14.0
         with:
-          input: /tmp/image.tar
+          input: /github/workspace/image.tar
           format: sarif
           output: trivy-results.sarif
           severity: ${{ inputs.severity }}
@@ -212,7 +217,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@012739e5082ff0c22ca6d6ab32e07c36df03c4a4 # v3.22.12
         with:
           sarif_file: trivy-results.sarif
-          category: trivy-${{ inputs.service-name }}
+          category: trivy-${{ steps.meta.outputs.service }}
 
       # 스캔 통과 후 실제 push — 지정 ref + 지정 플랫폼으로 재빌드
       - name: Push image
@@ -225,7 +230,7 @@ jobs:
           platforms: ${{ inputs.platforms }}
           push: true
           tags: ${{ steps.meta.outputs.ref }}
-          cache-from: type=gha,scope=${{ inputs.service-name }}
+          cache-from: type=gha,scope=${{ steps.meta.outputs.service }}
           provenance: true
           sbom: true
 

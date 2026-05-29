@@ -5,7 +5,7 @@
 #   2. service-name            → 이 서비스의 고유 이름
 #   3. language                → 아래 중 하나 선택: node | python | go | java
 #   4. <language>-version      → 선택한 언어의 버전 input 하나만 남기고 나머지 삭제
-#   5. ECR 사용 시 secrets.ECR_REGISTRY → secrets.ecr-registry 로 전달
+#   5. ECR 사용 시 vars.ECR_REGISTRY → with.ecr-registry 로 전달 (Variables에서 관리, Secrets 아님)
 #      GHCR 등 ECR 외 레지스트리는 with.docker-registry 사용
 #
 # [언어별 버전 input 대응표]
@@ -52,6 +52,7 @@ jobs:
       # service-name 생략 시 repo 이름 자동 사용
       use-ecr: true
       aws-region: ap-northeast-2
+      ecr-registry: ${{ vars.ECR_REGISTRY }}
       # 아래는 기본값과 다를 때만 명시
       # build-context: .
       # dockerfile: Dockerfile
@@ -59,6 +60,5 @@ jobs:
       # severity: HIGH,CRITICAL
       # sign-image: true
     secrets:
-      ecr-registry: ${{ secrets.ECR_REGISTRY }}
       aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
       aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
