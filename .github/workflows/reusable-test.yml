@@ -60,6 +60,11 @@ on:
         type: string
         default: "80"
         description: "Minimum line coverage % required to pass."
+      run-sonar:
+        required: false
+        type: boolean
+        default: false
+        description: "SonarCloud 스캔 실행 여부. true 시 sonar-token secret 필요."
       working-directory:
         required: false
         type: string
@@ -236,7 +241,7 @@ jobs:
 
       # ── SonarCloud ──────────────────────────────────────────────────────────
       - name: SonarCloud scan
-        if: ${{ secrets.sonar-token != '' }}
+        if: inputs.run-sonar
         uses: SonarSource/sonarcloud-github-action@49e6cd3b187936a73b8280d59ffd9da69df63ec9 # v2.1.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

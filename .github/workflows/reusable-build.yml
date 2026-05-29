@@ -62,7 +62,15 @@ on:
         type: string
         default: "ap-northeast-2"
         description: "AWS region for ECR (e.g. ap-northeast-2)."
+      use-ecr:
+        required: false
+        type: boolean
+        default: false
+        description: "ECR 사용 여부. true 시 AWS credentials로 ECR 로그인, false 시 registry-username/password 사용."
     secrets:
+      ecr-registry:
+        required: false
+        description: "ECR registry URL (<account-id>.dkr.ecr.<region>.amazonaws.com). inputs.docker-registry보다 우선 적용."
       aws-access-key-id:
         required: false
         description: "AWS Access Key ID for ECR login."
@@ -127,7 +135,7 @@ jobs:
           set -euo pipefail
           SERVICE="${{ inputs.service-name }}"
           SERVICE="${SERVICE:-${GITHUB_REPOSITORY##*/}}" 
-          IMAGE="${{ inputs.docker-registry }}/${SERVICE}"
+          IMAGE="${{ secrets.ecr-registry || inputs.docker-registry }}/${SERVICE}"
           TAG="sha-${GITHUB_SHA::12}"
           echo "service=${SERVICE}"    >> "$GITHUB_OUTPUT"
           echo "image=${IMAGE}"        >> "$GITHUB_OUTPUT"
@@ -136,7 +144,7 @@ jobs:
 
       # ECR — Access Key로 AWS 자격증명 구성 후 로그인
       - name: Configure AWS credentials (ECR)
-        if: ${{ secrets.aws-access-key-id != '' }}
+        if: inputs.use-ecr
         uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
         with:
           aws-access-key-id: ${{ secrets.aws-access-key-id }}
@@ -144,12 +152,12 @@ jobs:
           aws-region: ${{ inputs.aws-region }}
 
       - name: Log in to ECR
-        if: ${{ secrets.aws-access-key-id != '' }}
+        if: inputs.use-ecr
         uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
 
       # GHCR / Docker Hub 등 일반 레지스트리
       - name: Log in to registry
-        if: ${{ secrets.aws-access-key-id == '' && secrets.registry-username != '' && secrets.registry-password != '' }}
+        if: ${{ !inputs.use-ecr }}
         uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
         with:
           registry: ${{ inputs.docker-registry }}
