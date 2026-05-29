@@ -25,6 +25,9 @@ on:
 jobs:
   test:
     uses: 404-Factory/.github/.github/workflows/reusable-test.yml@dev
+    permissions:
+      contents: read
+      pull-requests: write
     with:
       # service-name 생략 시 repo 이름 자동 사용
       language: node        # ← 변경 시 아래 버전 input도 함께 교체
@@ -33,12 +36,18 @@ jobs:
       # go-version: "1.22"      # go     → go-version
       # java-version: "21"      # java   → java-version (+ java-distribution)
       coverage-threshold: "80"
+      # run-sonar: true   # SonarCloud 사용 시 true로 설정 (SONAR_TOKEN secret 필요)
     secrets:
       sonar-token: ${{ secrets.SONAR_TOKEN }}
 
   build:
     needs: test
     uses: 404-Factory/.github/.github/workflows/reusable-build.yml@dev
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      security-events: write
     with:
       # service-name 생략 시 repo 이름 자동 사용
       use-ecr: true
