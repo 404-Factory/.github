@@ -192,10 +192,13 @@ jobs:
           path: sbom.cdx.json
           if-no-files-found: error
 
+      - name: Save image for Trivy scan
+        run: docker save ${{ steps.meta.outputs.ref }} -o /tmp/image.tar
+
       - name: Run Trivy scan (gate)
         uses: aquasecurity/trivy-action@2b6a709cf9c4025c5438138008beaddbb02086f0 # v0.14.0
         with:
-          image-ref: ${{ steps.meta.outputs.ref }}
+          input: /tmp/image.tar
           format: sarif
           output: trivy-results.sarif
           severity: ${{ inputs.severity }}
