@@ -185,6 +185,7 @@ jobs:
           image: ${{ steps.meta.outputs.ref }}
           format: cyclonedx-json
           output-file: sbom.cdx.json
+          upload-artifact: false   # 자동 업로드 비활성화 — artifact 이름에 금지 문자 포함 방지
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
