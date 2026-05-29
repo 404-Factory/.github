@@ -41,6 +41,7 @@ jobs:
     uses: 404-Factory/.github/.github/workflows/reusable-build.yml@dev
     with:
       # service-name 생략 시 repo 이름 자동 사용
+      use-ecr: true
       aws-region: ap-northeast-2
       # 아래는 기본값과 다를 때만 명시
       # build-context: .
