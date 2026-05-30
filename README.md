@@ -13,8 +13,7 @@
 │   └── setup-env/
 │       └── action.yml        # 언어별 런타임 셋업 composite action
 └── workflows/
-    ├── reusable-build.yml    # Docker 빌드 + 보안 스캔 + 이미지 서명
-    ├── reusable-test.yml     # 테스트 + 커버리지 측정
+    ├── reusable-build.yml    # Docker 빌드 + 이미지 푸시
     └── caller-ci-example.yml # 서비스 repo용 호출 예시 (복사해서 사용)
 ```
 
@@ -22,40 +21,38 @@
 
 ## Workflows
 
-### `reusable-build.yml` — Docker 빌드 & 스캔
+### `reusable-build.yml` — Docker 빌드 & 푸시
 
 | 단계 | 내용 |
 |---|---|
 | Build | Docker 이미지 빌드 (로컬 로드) |
-| SBOM | CycloneDX 형식 소프트웨어 명세서 생성 |
-| Scan | Trivy로 HIGH/CRITICAL 취약점 게이트 |
-| Push | main 브랜치 push 시에만 레지스트리로 푸시 |
-| Sign | cosign keyless 서명 + SBOM 어테스테이션 |
+| Push | 지정 브랜치 push 시에만 레지스트리로 푸시 |
 
 **inputs**
 
 | 이름 | 필수 | 기본값 | 설명 |
 |---|---|---|---|
 | `service-name` | | repo 이름 | 서비스 이름 (이미지 태그에 사용). 생략 시 repo 이름 자동 사용. |
-| `docker-registry` | | `ghcr.io` | 레지스트리 호스트 (ECR 사용 시 `ecr-registry` secret 우선 적용) |
+| `docker-registry` | | `ghcr.io` | 레지스트리 호스트 |
 | `use-ecr` | | `false` | AWS ECR 사용 여부. `true` 시 AWS 자격증명으로 ECR 로그인. |
+| `ecr-registry` | | | ECR 레지스트리 URL (`<account-id>.dkr.ecr.<region>.amazonaws.com`). `use-ecr: true` 시 필요. |
 | `aws-region` | | `ap-northeast-2` | ECR 사용 시 AWS 리전 |
 | `build-context` | | `.` | Dockerfile 빌드 컨텍스트 경로 |
 | `dockerfile` | | `Dockerfile` | Dockerfile 경로 |
 | `platforms` | | `linux/amd64` | 빌드 플랫폼 (멀티 아키: `linux/amd64,linux/arm64`) |
 | `push-on-ref` | | `refs/heads/main` | 이미지를 푸시할 브랜치 ref |
-| `severity` | | `HIGH,CRITICAL` | Trivy 스캔 실패 기준 심각도 |
-| `sign-image` | | `true` | cosign 서명 여부 |
+| `java-version` | | | JVM 서비스용 Java 버전 (예: `17`). 설정 시 pre-build 전 Java 셋업. |
+| `pre-build-command` | | | Docker 빌드 전 실행할 명령어 (예: `./gradlew build -x test --no-daemon`). |
 
 **secrets**
 
 | 이름 | 설명 |
 |---|---|
-| `ecr-registry` | ECR 레지스트리 URL (`<account-id>.dkr.ecr.<region>.amazonaws.com`). `use-ecr: true` 시 필요. |
 | `aws-access-key-id` | AWS Access Key ID. `use-ecr: true` 시 필요. |
 | `aws-secret-access-key` | AWS Secret Access Key. `use-ecr: true` 시 필요. |
 | `registry-username` | 레지스트리 사용자명. GHCR 등 ECR 외 레지스트리 사용 시 필요. |
 | `registry-password` | 레지스트리 비밀번호/토큰. GHCR 등 ECR 외 레지스트리 사용 시 필요. |
+| `gpr-token` | GitHub Packages 읽기용 PAT (`read:packages`). pre-build-command에서 다른 레포 패키지 접근 시 필요. |
 
 **outputs**
 
@@ -67,37 +64,6 @@
 
 ---
 
-### `reusable-test.yml` — 테스트 & 커버리지
-
-지원 언어: `node` \| `python` \| `go` \| `java`
-
-| 단계 | 내용 |
-|---|---|
-| Setup | 언어별 런타임 및 패키지 캐시 설정 |
-| Lint | 언어별 린터 실행 |
-| Test | 테스트 실행 + 커버리지 측정 |
-| Gate | 커버리지 임계값 미달 시 실패 |
-| SonarCloud | 정적 분석 (토큰 없으면 스킵) |
-| PR Comment | PR에 테스트 결과 코멘트 |
-
-**inputs**
-
-| 이름 | 필수 | 기본값 | 설명 |
-|---|---|---|---|
-| `service-name` | | repo 이름 | 서비스 이름. 생략 시 repo 이름 자동 사용. |
-| `language` | ✅ | — | `node` \| `python` \| `go` \| `java` |
-| `node-version` | | `20.x` | Node.js 버전 |
-| `python-version` | | `3.11` | Python 버전 |
-| `go-version` | | `1.22` | Go 버전 |
-| `java-version` | | `21` | Java 버전 |
-| `java-distribution` | | `temurin` | JDK 배포판 |
-| `test-command` | | 언어별 기본값 | 테스트 명령어 override |
-| `coverage-threshold` | | `80` | 최소 커버리지 % |
-| `run-sonar` | | `false` | SonarCloud 스캔 실행 여부. `true` 시 `sonar-token` secret 필요. |
-| `working-directory` | | `.` | 소스 루트 경로 |
-
----
-
 ## 각 서비스 repo에서 사용하는 방법
 
 `.github/workflows/caller-ci-example.yml`을 서비스 repo의 `.github/workflows/ci.yml`로 복사한 뒤 아래 항목만 수정합니다.
@@ -106,18 +72,11 @@
 
 ```yaml
 jobs:
-  test:
-    uses: 404-Factory/.github/.github/workflows/reusable-test.yml@main
-    with:
-      language: node               # 사용 언어
-      node-version: "20.x"         # 해당 언어의 버전 input만 남기기
-      run-sonar: true              # SonarCloud 사용 시 true (SONAR_TOKEN secret 필요)
-    secrets:
-      sonar-token: ${{ secrets.SONAR_TOKEN }}
-
   build:
-    needs: test
     uses: 404-Factory/.github/.github/workflows/reusable-build.yml@main
+    permissions:
+      contents: read
+      packages: write
     with:
       docker-registry: ghcr.io/404-Factory
     secrets:
@@ -129,46 +88,52 @@ jobs:
 
 ```yaml
 jobs:
-  test:
-    uses: 404-Factory/.github/.github/workflows/reusable-test.yml@main
-    with:
-      language: node
-      node-version: "20.x"
-    secrets:
-      sonar-token: ${{ secrets.SONAR_TOKEN }}
-
   build:
-    needs: test
     uses: 404-Factory/.github/.github/workflows/reusable-build.yml@main
+    permissions:
+      contents: read
+      packages: write
     with:
       use-ecr: true
       aws-region: ap-northeast-2
+      ecr-registry: ${{ vars.ECR_REGISTRY }}
     secrets:
-      ecr-registry: ${{ secrets.ECR_REGISTRY }}
       aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
       aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 ```
 
-**언어별 버전 input 대응표**
+**JVM 서비스 (Gradle pre-build 포함)**
 
-| language | 사용할 input |
-|---|---|
-| `node` | `node-version` |
-| `python` | `python-version` |
-| `go` | `go-version` |
-| `java` | `java-version` + `java-distribution` |
+```yaml
+jobs:
+  build:
+    uses: 404-Factory/.github/.github/workflows/reusable-build.yml@main
+    permissions:
+      contents: read
+      packages: write
+    with:
+      use-ecr: true
+      aws-region: ap-northeast-2
+      ecr-registry: ${{ vars.ECR_REGISTRY }}
+      java-version: "17"
+      pre-build-command: "./gradlew build -x test --no-daemon"
+    secrets:
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      gpr-token: ${{ secrets.GPR_TOKEN }}
+```
 
-> 기본값과 동일한 input은 생략 가능합니다.  
-> `service-name`은 생략 시 repo 이름을 자동으로 사용합니다.
+> `service-name`은 생략 시 repo 이름을 자동으로 사용합니다.  
+> `push-on-ref` 기본값은 `refs/heads/main`입니다. 다른 브랜치로 푸시하려면 명시하세요.
 
 ---
 
-## Secrets
+## Secrets / Variables
 
-| Secret | 등록 위치 | 설명 |
-|---|---|---|
-| `SONAR_TOKEN` | 각 서비스 repo | SonarCloud 분석 토큰 (`run-sonar: true` 설정 시 필요) |
-| `ECR_REGISTRY` | 각 서비스 repo | ECR 레지스트리 URL (`use-ecr: true` 설정 시 필요) |
-| `AWS_ACCESS_KEY_ID` | 각 서비스 repo | AWS Access Key ID (`use-ecr: true` 설정 시 필요) |
-| `AWS_SECRET_ACCESS_KEY` | 각 서비스 repo | AWS Secret Access Key (`use-ecr: true` 설정 시 필요) |
-| `GITHUB_TOKEN` | 자동 제공 | GHCR 이미지 푸시에 사용 |
+| 이름 | 종류 | 등록 위치 | 설명 |
+|---|---|---|---|
+| `AWS_ACCESS_KEY_ID` | Secret | 각 서비스 repo | AWS Access Key ID (`use-ecr: true` 설정 시 필요) |
+| `AWS_SECRET_ACCESS_KEY` | Secret | 각 서비스 repo | AWS Secret Access Key (`use-ecr: true` 설정 시 필요) |
+| `GPR_TOKEN` | Secret | 각 서비스 repo | GitHub Packages 읽기용 PAT (`read:packages`). Gradle 플러그인 등 다른 레포 패키지 접근 시 필요. |
+| `ECR_REGISTRY` | Variable | 각 서비스 repo | ECR 레지스트리 URL (`use-ecr: true` 설정 시 필요) |
+| `GITHUB_TOKEN` | 자동 제공 | — | GHCR 이미지 푸시에 사용 |
