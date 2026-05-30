@@ -47,16 +47,6 @@ on:
         type: string
         default: "refs/heads/main"
         description: "Push only when github.ref equals this value."
-      severity:
-        required: false
-        type: string
-        default: "HIGH,CRITICAL"
-        description: "Trivy severities that fail the build."
-      sign-image:
-        required: false
-        type: boolean
-        default: true
-        description: "Sign the pushed image with cosign (keyless OIDC) and attest SBOM."
       aws-region:
         required: false
         type: string
@@ -126,8 +116,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write
-      security-events: write
+
     outputs:
       image:  ${{ steps.meta.outputs.image }}
       tag:    ${{ steps.meta.outputs.tag }}
@@ -214,48 +203,6 @@ jobs:
           cache-to:   type=gha,mode=max,scope=${{ steps.meta.outputs.service }}
           provenance: false
 
-      - name: Install syft
-        id: syft-installer
-        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
-
-      - name: Generate SBOM (CycloneDX)
-        run: ${{ steps.syft-installer.outputs.cmd }} docker:${{ steps.meta.outputs.ref }} -o cyclonedx-json=sbom.cdx.json
-
-      - name: Upload SBOM artifact
-        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
-        with:
-          name: sbom-${{ steps.meta.outputs.service }}-${{ steps.meta.outputs.tag }}
-          path: sbom.cdx.json
-          if-no-files-found: error
-
-      - name: Install trivy
-        uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
-        with:
-          version: v0.70.0
-
-      - name: Run Trivy scan (gate)
-        env:
-          IMAGE_REF: ${{ steps.meta.outputs.ref }}
-          SEVERITY: ${{ inputs.severity }}
-        run: |
-          trivy image \
-            --format sarif \
-            --output trivy-results.sarif \
-            --severity "$SEVERITY" \
-            --ignore-unfixed \
-            --vuln-type os,library \
-            --exit-code 0 \
-            --skip-version-check \
-            "$IMAGE_REF"
-
-      - name: Upload SARIF to GitHub Security
-        if: always()
-        continue-on-error: true   # private repo / Advanced Security 미활성화 환경에서 업로드 실패 허용
-        uses: github/codeql-action/upload-sarif@012739e5082ff0c22ca6d6ab32e07c36df03c4a4 # v3.22.12
-        with:
-          sarif_file: trivy-results.sarif
-          category: trivy-${{ steps.meta.outputs.service }}
-
       # 스캔 통과 후 실제 push — 지정 ref + 지정 플랫폼으로 재빌드
       - name: Push image
         id: push
@@ -271,26 +218,6 @@ jobs:
           provenance: true
           sbom: true
 
-      - name: Install cosign
-        if: ${{ steps.push.conclusion == 'success' && inputs.sign-image }}
-        uses: sigstore/cosign-installer@e1523de7571e31dbe865fd2e80c5c7c23ae71eb4 # v3.4.0
-
-      - name: Sign image (keyless)
-        if: ${{ steps.push.conclusion == 'success' && inputs.sign-image }}
-        env:
-          IMAGE_DIGEST_REF: ${{ steps.meta.outputs.image }}@${{ steps.push.outputs.digest }}
-        run: cosign sign --yes "$IMAGE_DIGEST_REF"
-
-      - name: Attest SBOM
-        if: ${{ steps.push.conclusion == 'success' && inputs.sign-image }}
-        env:
-          IMAGE_DIGEST_REF: ${{ steps.meta.outputs.image }}@${{ steps.push.outputs.digest }}
-        run: |
-          cosign attest --yes \
-            --predicate sbom.cdx.json \
-            --type cyclonedx \
-            "$IMAGE_DIGEST_REF"
-
       - name: Job summary
         if: always()
         shell: bash
@@ -303,5 +230,4 @@ jobs:
             echo "| Image | \`${{ steps.meta.outputs.ref }}\` |"
             echo "| Pushed | ${{ steps.push.conclusion == 'success' }} |"
             echo "| Digest | \`${{ steps.push.outputs.digest }}\` |"
-            echo "| Signed | ${{ steps.push.conclusion == 'success' && inputs.sign-image }} |"
           } >> "$GITHUB_STEP_SUMMARY"

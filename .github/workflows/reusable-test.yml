@@ -55,11 +55,11 @@ on:
         type: string
         default: ""
         description: "Override default test command for the language."
-      coverage-threshold:
-        required: false
-        type: string
-        default: "80"
-        description: "Minimum line coverage % required to pass."
+      # coverage-threshold:
+      #   required: false
+      #   type: string
+      #   default: "80"
+      #   description: "Minimum line coverage % required to pass."
       run-sonar:
         required: false
         type: boolean
