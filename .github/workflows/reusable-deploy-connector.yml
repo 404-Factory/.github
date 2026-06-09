@@ -1,0 +1,130 @@
+name: Reusable Deploy Debezium Connector
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        required: true
+        type: string
+        description: "서비스명 (토픽 prefix, 커넥터 이름에 사용)"
+      db-name:
+        required: true
+        type: string
+        description: "DB명 (캡처 대상 데이터베이스)"
+      server-id:
+        required: true
+        type: string
+        description: "MariaDB server.id (커넥터마다 고유한 숫자)"
+      aws-region:
+        required: false
+        type: string
+        default: "ap-northeast-2"
+      eks-cluster-name:
+        required: true
+        type: string
+        description: "EKS 클러스터 이름"
+      kafka-bootstrap-servers:
+        required: false
+        type: string
+        default: "sigma-kafka-kafka-bootstrap.default.svc.cluster.local:9092"
+    secrets:
+      aws-access-key-id:
+        required: true
+      aws-secret-access-key:
+        required: true
+
+permissions: {}
+
+jobs:
+  deploy-connector:
+    name: connector-${{ inputs.service-name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          aws-access-key-id: ${{ secrets.aws-access-key-id }}
+          aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ inputs.eks-cluster-name }} \
+            --region ${{ inputs.aws-region }}
+
+      - name: Render and diff-apply connector
+        env:
+          SERVICE_NAME: ${{ inputs.service-name }}
+          DB_NAME: ${{ inputs.db-name }}
+          SERVER_ID: ${{ inputs.server-id }}
+          KAFKA_BOOTSTRAP_SERVERS: ${{ inputs.kafka-bootstrap-servers }}
+        run: |
+          set -euo pipefail
+
+          # DB_HOST, DEBEZIUM_USERNAME, DEBEZIUM_PASSWORD는 CI를 거치지 않음
+          # KafkaConnect externalConfiguration.env → K8s Secret(debezium-credentials) → ${env:VAR}로 런타임 주입
+          # ${routedByValue}는 Debezium 런타임 변수 — envsubst 목록에서 반드시 제외
+          RENDERED=$(cat << 'TEMPLATE' | envsubst '${SERVICE_NAME} ${SERVER_ID} ${DB_NAME} ${KAFKA_BOOTSTRAP_SERVERS}'
+          apiVersion: kafka.strimzi.io/v1
+          kind: KafkaConnector
+          metadata:
+            name: ${SERVICE_NAME}-outbox-connector
+            namespace: default
+            labels:
+              strimzi.io/cluster: debezium-connect-cluster
+          spec:
+            class: io.debezium.connector.mariadb.MariaDbConnector
+            tasksMax: 1
+            config:
+              database.hostname: ${DB_HOST}
+              database.port: "3306"
+              database.user: ${DEBEZIUM_USERNAME}
+              database.password: ${DEBEZIUM_PASSWORD}
+              database.server.id: "${SERVER_ID}"
+              topic.prefix: ${SERVICE_NAME}
+              database.include.list: ${DB_NAME}
+              table.include.list: ${DB_NAME}.outbox
+              snapshot.mode: "initial"
+              snapshot.fetch.size: "100"
+              snapshot.max.threads: "1"
+              snapshot.min.row.count.to.stream.results: "1"
+              schema.history.internal.kafka.bootstrap.servers: ${KAFKA_BOOTSTRAP_SERVERS}
+              schema.history.internal.kafka.topic: ${SERVICE_NAME}-schema-history
+              schema.history.internal.store.only.captured.tables.ddl: "true"
+              schema.history.internal.skip.unparseable.ddl: "true"
+              transforms: outbox
+              transforms.outbox.type: io.debezium.transforms.outbox.EventRouter
+              transforms.outbox.table.op.invalid.behavior: "fatal"
+              transforms.outbox.table.field.event.id: "id"
+              transforms.outbox.table.field.event.key: "aggregate_id"
+              transforms.outbox.table.field.event.payload: "payload"
+              transforms.outbox.table.field.event.timestamp: "created_at"
+              transforms.outbox.table.fields.additional.placement: "type:header:eventType"
+              transforms.outbox.route.by.field: aggregate_type
+              transforms.outbox.route.topic.replacement: outbox.event.${SERVICE_NAME}.${routedByValue}
+              key.converter.schemas.enable: "false"
+              value.converter.schemas.enable: "false"
+              max.batch.size: "512"
+              max.queue.size: "2048"
+              errors.tolerance: "all"
+              errors.log.enable: "true"
+              errors.log.include.messages: "false"
+              errors.retry.timeout: "0"
+              errors.retry.delay.max.ms: "60000"
+              errors.deadletterqueue.topic.name: ${SERVICE_NAME}-dlq
+              errors.deadletterqueue.topic.replication.factor: "1"
+              errors.deadletterqueue.context.headers.enable: "true"
+          TEMPLATE
+          )
+
+          # 변경 없으면 skip, 있으면 apply (신규 생성 포함)
+          if echo "$RENDERED" | kubectl diff -f - > /dev/null 2>&1; then
+            echo "No changes detected - skipping apply"
+          else
+            echo "$RENDERED" | kubectl apply -f -
+          fi
