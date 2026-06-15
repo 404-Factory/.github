@@ -9,11 +9,9 @@
 
 ```
 .github/
-├── actions/
-│   └── setup-env/
-│       └── action.yml        # 언어별 런타임 셋업 composite action
 └── workflows/
     ├── reusable-build.yml    # Docker 빌드 + 이미지 푸시
+    ├── reusable-deploy.yml   # EKS kubectl apply 배포
     └── caller-ci-example.yml # 서비스 repo용 호출 예시 (복사해서 사용)
 ```
 
