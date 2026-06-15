@@ -1,5 +1,10 @@
 # .github/workflows/ci.yml  ← 각 서비스 repo에 이 파일을 복사해서 사용
 #
+# [GitHub Variables 등록 필요 - 레포 또는 조직 설정]
+#   PLATFORM      → 빌드/배포 대상 아키텍처 (예: linux/arm64, linux/amd64)
+#                   Settings → Secrets and variables → Actions → Variables
+#   ECR_REGISTRY  → ECR 레지스트리 URL
+#
 # [필수 수정 항목 - build]
 #   1. service-name       → 이 서비스의 고유 이름 (생략 시 repo 이름 자동 사용)
 #   2. ECR 사용 시 vars.ECR_REGISTRY → with.ecr-registry 로 전달 (Variables에서 관리, Secrets 아님)
@@ -30,10 +35,10 @@ jobs:
       use-ecr: true
       aws-region: ap-northeast-2
       ecr-registry: ${{ vars.ECR_REGISTRY }}
+      platforms: ${{ vars.PLATFORM }}   # 레포/조직 Variables에서 관리 (예: linux/arm64)
       # 아래는 기본값과 다를 때만 명시
       # build-context: .
       # dockerfile: Dockerfile
-      # platforms: linux/amd64,linux/arm64
     secrets:
       aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
       aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

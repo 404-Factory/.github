@@ -134,4 +134,5 @@ jobs:
 | `AWS_SECRET_ACCESS_KEY` | Secret | 각 서비스 repo | AWS Secret Access Key (`use-ecr: true` 설정 시 필요) |
 | `GPR_TOKEN` | Secret | 각 서비스 repo | GitHub Packages 읽기용 PAT (`read:packages`). Gradle 플러그인 등 다른 레포 패키지 접근 시 필요. |
 | `ECR_REGISTRY` | Variable | 각 서비스 repo | ECR 레지스트리 URL (`use-ecr: true` 설정 시 필요) |
+| `PLATFORM` | Variable | 조직 또는 각 서비스 repo | 빌드 대상 플랫폼 (예: `linux/arm64`, `linux/amd64`). EKS 노드 아키텍처와 맞춰야 함. 미설정 시 `reusable-build.yml` 기본값 사용. |
 | `GITHUB_TOKEN` | 자동 제공 | — | GHCR 이미지 푸시에 사용 |

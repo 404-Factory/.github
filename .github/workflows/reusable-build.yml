@@ -40,7 +40,7 @@ on:
       platforms:
         required: false
         type: string
-        default: "linux/amd64"
+        default: "linux/arm64" #"linux/arm64"
         description: "Target platforms, comma-separated (e.g. 'linux/amd64,linux/arm64')."
       push-on-ref:
         required: false
@@ -156,11 +156,19 @@ jobs:
         env:
           INPUT_SERVICE: ${{ inputs.service-name }}
           INPUT_REGISTRY: ${{ inputs.ecr-registry || inputs.docker-registry }}
+          INPUT_PLATFORMS: ${{ inputs.platforms }}
         run: |
           set -euo pipefail
           SERVICE="${INPUT_SERVICE:-${GITHUB_REPOSITORY##*/}}"
           IMAGE="${INPUT_REGISTRY}/${SERVICE}"
-          TAG="sha-${GITHUB_SHA::12}"
+
+          if [[ "$INPUT_PLATFORMS" == *","* ]]; then
+            ARCH="multiarch"
+          else
+            ARCH="${INPUT_PLATFORMS##*/}"
+          fi
+
+          TAG="sha-${GITHUB_SHA::12}-${ARCH}"
           echo "service=${SERVICE}"    >> "$GITHUB_OUTPUT"
           echo "image=${IMAGE}"        >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}"            >> "$GITHUB_OUTPUT"
@@ -195,7 +203,7 @@ jobs:
         with:
           context: ${{ inputs.build-context }}
           file: ${{ inputs.build-context }}/${{ inputs.dockerfile }}
-          platforms: linux/amd64
+          platforms: ${{ contains(inputs.platforms, ',') && 'linux/amd64' || inputs.platforms }}
           load: true
           push: false
           tags: ${{ steps.meta.outputs.ref }}
