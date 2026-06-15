@@ -1,0 +1,65 @@
+name: Reusable Deploy Debezium Connector
+
+on:
+  workflow_call:
+    inputs:
+      aws-region:
+        required: false
+        type: string
+        default: "ap-northeast-2"
+      eks-cluster-name:
+        required: true
+        type: string
+        description: "EKS 클러스터 이름"
+      connector-path:
+        required: false
+        type: string
+        default: "k8s/connector/connector.yaml"
+        description: "커넥터 manifest 파일 경로"
+    secrets:
+      aws-access-key-id:
+        required: true
+      aws-secret-access-key:
+        required: true
+
+permissions: {}
+
+jobs:
+  deploy-connector:
+    name: connector-deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          persist-credentials: false
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          aws-access-key-id: ${{ secrets.aws-access-key-id }}
+          aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ inputs.eks-cluster-name }} \
+            --region ${{ inputs.aws-region }}
+
+      - name: Diff and apply connector
+        env:
+          CONNECTOR_PATH: ${{ inputs.connector-path }}
+        run: |
+          set -euo pipefail
+
+          # 변경 없으면 skip, 있으면 apply (신규 생성 포함)
+          if kubectl diff -f "$CONNECTOR_PATH" > /dev/null 2>&1; then
+            echo "No changes detected - skipping apply"
+          else
+            kubectl apply -f "$CONNECTOR_PATH"
+          fi

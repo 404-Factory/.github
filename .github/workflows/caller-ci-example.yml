@@ -1,0 +1,61 @@
+# .github/workflows/ci.yml  ← 각 서비스 repo에 이 파일을 복사해서 사용
+#
+# [GitHub Variables 등록 필요 - 레포 또는 조직 설정]
+#   PLATFORM      → 빌드/배포 대상 아키텍처 (예: linux/arm64, linux/amd64)
+#                   Settings → Secrets and variables → Actions → Variables
+#   ECR_REGISTRY  → ECR 레지스트리 URL
+#
+# [필수 수정 항목 - build]
+#   1. service-name       → 이 서비스의 고유 이름 (생략 시 repo 이름 자동 사용)
+#   2. ECR 사용 시 vars.ECR_REGISTRY → with.ecr-registry 로 전달 (Variables에서 관리, Secrets 아님)
+#      GHCR 등 ECR 외 레지스트리는 with.docker-registry 사용
+#   3. JVM 서비스는 java-version + pre-build-command 추가
+#
+# [필수 수정 항목 - deploy]
+#   4. eks-cluster-name   → EKS 클러스터 이름
+#   5. deploy-environment → GitHub Environment 이름 (예: staging, production)
+#   6. workload-label-selector → rollout 검증용 label selector (예: app=my-service)
+
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  build:
+    uses: 404-Factory/.github/.github/workflows/reusable-build.yml@dev
+    permissions:
+      contents: read
+      packages: write
+    with:
+      # service-name 생략 시 repo 이름 자동 사용
+      use-ecr: true
+      aws-region: ap-northeast-2
+      ecr-registry: ${{ vars.ECR_REGISTRY }}
+      platforms: ${{ vars.PLATFORM }}   # 레포/조직 Variables에서 관리 (예: linux/arm64)
+      # 아래는 기본값과 다를 때만 명시
+      # build-context: .
+      # dockerfile: Dockerfile
+    secrets:
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: 404-Factory/.github/.github/workflows/reusable-deploy.yml@dev
+    with:
+      eks-cluster-name: my-cluster        # ← 수정 필요
+      deploy-environment: production      # ← 수정 필요
+      image: ${{ needs.build.outputs.image }}
+      image-tag: ${{ needs.build.outputs.tag }}
+      workload-label-selector: app=my-service  # ← 수정 필요
+      # namespace: default
+      # manifest-dir: k8s
+      # aws-region: ap-northeast-2
+    secrets:
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

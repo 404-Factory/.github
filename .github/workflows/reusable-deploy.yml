@@ -1,0 +1,162 @@
+# .github/workflows/reusable-deploy.yml
+# EKS kubectl apply Reusable Workflow
+#
+# 호출 예시 (build 완료 후 연결):
+#   deploy:
+#     needs: build
+#     uses: 404-Factory/.github/.github/workflows/reusable-deploy.yml@main
+#     with:
+#       eks-cluster-name: my-cluster
+#       deploy-environment: production
+#       image: ${{ needs.build.outputs.image }}
+#       image-tag: ${{ needs.build.outputs.tag }}
+
+name: Reusable Deploy Workflow
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        required: false
+        type: string
+        default: ""
+        description: "서비스 이름. 생략 시 repo 이름 자동 사용."
+      deploy-environment:
+        required: true
+        type: string
+        description: "배포 환경 (예: staging, production)"
+      aws-region:
+        required: false
+        type: string
+        default: "ap-northeast-2"
+        description: "AWS 리전"
+      eks-cluster-name:
+        required: true
+        type: string
+        description: "EKS 클러스터 이름"
+      namespace:
+        required: false
+        type: string
+        default: "default"
+        description: "배포할 Kubernetes 네임스페이스"
+      manifest-dir:
+        required: false
+        type: string
+        default: "k8s"
+        description: "kubectl apply할 manifest 디렉토리 경로 (repo 루트 기준)"
+      image:
+        required: true
+        type: string
+        description: "이미지 경로 (registry/name). manifest 내 $IMAGE 변수 치환에 사용."
+      image-tag:
+        required: true
+        type: string
+        description: "이미지 태그 (예: sha-abc123). manifest 내 $IMAGE_TAG 변수 치환에 사용."
+      workload-label-selector:
+        required: false
+        type: string
+        default: ""
+        description: "배포 후 rollout 검증 및 디버깅에 사용할 label selector (예: app=my-service). 생략 시 rollout 검증 스킵."
+    secrets:
+      aws-access-key-id:
+        required: true
+        description: "AWS Access Key ID"
+      aws-secret-access-key:
+        required: true
+        description: "AWS Secret Access Key"
+
+permissions: {}
+
+concurrency:
+  group: deploy-${{ github.workflow }}-${{ inputs.deploy-environment }}-${{ inputs.service-name || github.event.repository.name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy-${{ inputs.service-name || github.event.repository.name }}-${{ inputs.deploy-environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ inputs.deploy-environment }}
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          persist-credentials: false
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          aws-access-key-id: ${{ secrets.aws-access-key-id }}
+          aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ inputs.eks-cluster-name }} \
+            --region ${{ inputs.aws-region }}
+
+      - name: Apply manifests
+        env:
+          IMAGE: ${{ inputs.image }}
+          IMAGE_TAG: ${{ inputs.image-tag }}
+          NAMESPACE: ${{ inputs.namespace }}
+          MANIFEST_DIR: ${{ inputs.manifest-dir }}
+          SELECTOR: ${{ inputs.workload-label-selector }}
+        run: |
+          set -euo pipefail
+
+          manifest_dir="${MANIFEST_DIR%/}" 
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "$tmpdir"' EXIT
+
+          find "$manifest_dir" \( -name "*.yaml" -o -name "*.yml" \) -print0 |
+            sort -z |
+            while IFS= read -r -d '' f; do
+              rel="${f#"$manifest_dir"/}"
+              out="$tmpdir/$rel"
+              mkdir -p "$(dirname "$out")"
+              envsubst '$IMAGE $IMAGE_TAG' < "$f" > "$out"
+            done
+
+          if grep -R --line-number -E '\$[{]?(IMAGE|IMAGE_TAG)[}]?' "$tmpdir"; then
+            echo "ERROR: Unsubstituted variables remain in rendered manifests."
+            exit 1
+          fi
+
+          kubectl apply --server-side --dry-run=server -f "$tmpdir" -R -n "$NAMESPACE"
+          kubectl diff -f "$tmpdir" -R -n "$NAMESPACE" || true
+          kubectl apply --server-side -f "$tmpdir" -R -n "$NAMESPACE"
+
+          if [ -n "$SELECTOR" ]; then
+            kubectl rollout status deployment -n "$NAMESPACE" -l "$SELECTOR" --timeout=5m
+            kubectl get pods -n "$NAMESPACE" -l "$SELECTOR" -o wide
+          fi
+
+      - name: Debug on failure
+        if: failure()
+        env:
+          NAMESPACE: ${{ inputs.namespace }}
+          SELECTOR: ${{ inputs.workload-label-selector }}
+        run: |
+          [ -n "$SELECTOR" ] || exit 0
+          kubectl describe pods -n "$NAMESPACE" -l "$SELECTOR" || true
+          kubectl logs -n "$NAMESPACE" -l "$SELECTOR" --all-containers --tail=200 || true
+
+      - name: Job summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Deploy summary — ${{ inputs.service-name || github.event.repository.name }}"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Environment | \`${{ inputs.deploy-environment }}\` |"
+            echo "| Cluster | \`${{ inputs.eks-cluster-name }}\` |"
+            echo "| Namespace | \`${{ inputs.namespace }}\` |"
+            echo "| Image | \`${{ inputs.image }}:${{ inputs.image-tag }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
